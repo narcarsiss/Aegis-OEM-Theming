@@ -1,22 +1,25 @@
 <#
 .SYNOPSIS
-    Install-AegisTheme.ps1
+    Automated OEM theming and user account picture injection engine.
 .DESCRIPTION
-    Automates the injection of custom OEM desktop wallpapers, 4K fallback assets,
-    and multi-resolution user account profile avatars directly into an Aegis Win11 USB installer.
-    Optionally modifies autounattend.xml to register the theme and enforce global avatar tiles.
+    Injects physical 4K wallpaper fallback trees, custom wallpaper selections,
+    and multi-DPI user account picture tiles into an Aegis Win11 USB installation media.
+    Dynamically injects <Themes> and UseDefaultTile registry policies into autounattend.xml.
 .PARAMETER UsbDrive
-    Drive letter of the mounted installation USB (e.g., 'E:' or 'E').
+    The drive letter of the target mounted installation USB (e.g., 'E:' or 'E').
 .PARAMETER MasterWallpaperPath
-    Path to the source high-resolution 16:9 wallpaper file (.jpg or .png).
+    Path to the master 16:9 wallpaper. Defaults to .\assets\Master_Wallpaper.png.
 .PARAMETER MasterAvatarPath
-    Path to the source high-resolution 1:1 user profile avatar file (.jpg or .png).
+    Path to the master 1:1 avatar. Defaults to .\assets\Master_Avatar.png.
 .PARAMETER AllowTheming
-    Controls whether theme registration and asset staging are committed. Default is $true.
+    Enables or disables the theming injection pipeline. Defaults to $true.
 .EXAMPLE
-    .\Install-AegisTheme.ps1 -UsbDrive "E:" -MasterWallpaperPath ".\assets\raw\Master_Wallpaper.png" -MasterAvatarPath ".\assets\raw\Master_Avatar.png"
+    .\Install-AegisTheme.ps1 -UsbDrive "E:"
+.EXAMPLE
+    .\Install-AegisTheme.ps1 -UsbDrive "E:" -MasterWallpaperPath "C:\Custom\Wall.png" -MasterAvatarPath "C:\Custom\Avatar.png"
 .NOTES
     Author: Damien John O'Brien / Moosehead Studio
+    Repository: Aegis-OEM-Theming
     Version: 1.0.0
 #>
 
@@ -25,13 +28,11 @@ param (
     [Parameter(Mandatory = $true)]
     [string]$UsbDrive,
 
-    [Parameter(Mandatory = $true)]
-    [ValidateScript({ Test-Path $_ -PathType Leaf })]
-    [string]$MasterWallpaperPath,
+    [Parameter(Mandatory = $false)]
+    [string]$MasterWallpaperPath = (Join-Path $PSScriptRoot "assets\Master_Wallpaper.png"),
 
-    [Parameter(Mandatory = $true)]
-    [ValidateScript({ Test-Path $_ -PathType Leaf })]
-    [string]$MasterAvatarPath,
+    [Parameter(Mandatory = $false)]
+    [string]$MasterAvatarPath = (Join-Path $PSScriptRoot "assets\Master_Avatar.png"),
 
     [Parameter(Mandatory = $false)]
     [bool]$AllowTheming = $true
@@ -41,20 +42,29 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 if (-not $AllowTheming) {
-    Write-Host "[INFO] Theming injection aborted: -AllowTheming set to `$false." -ForegroundColor Yellow
+    Write-Host "[INFO] Theming injection skipped: -AllowTheming is `$false." -ForegroundColor Yellow
     exit 0
 }
 
-# Normalize drive letter formatting
+# Resolve USB Volume
 $CleanDrive = ($UsbDrive.TrimEnd('\').TrimEnd(':') + ":")
 if (-not (Test-Path "$CleanDrive\")) {
-    throw "[FATAL] Specified drive '$CleanDrive' is not accessible or not mounted."
+    throw "[FATAL] Specified drive '$CleanDrive' is not mounted or accessible."
 }
 
-$UnattendPath = "$CleanDrive\autounattend.xml"
+# Verify Source Images
+if (-not (Test-Path $MasterWallpaperPath -PathType Leaf)) {
+    throw "[FATAL] Master wallpaper not found at '$MasterWallpaperPath'. Place an image in assets\ or supply -MasterWallpaperPath."
+}
+if (-not (Test-Path $MasterAvatarPath -PathType Leaf)) {
+    throw "[FATAL] Master avatar not found at '$MasterAvatarPath'. Place an image in assets\ or supply -MasterAvatarPath."
+}
+
+$UnattendPath     = "$CleanDrive\autounattend.xml"
 $DistributionRoot = "$CleanDrive\sources\`$OEM$\$1"
 
-Write-Host "[INFO] Target distribution share: $DistributionRoot" -ForegroundColor Cyan
+Write-Host "[INFO] Target USB: $CleanDrive" -ForegroundColor Cyan
+Write-Host "[INFO] Distribution Share: $DistributionRoot" -ForegroundColor Cyan
 
 # 1. Directory Tree Construction
 $wallpaperCustomDir = Join-Path $DistributionRoot "Windows\Web\Wallpaper\Custom"
@@ -62,19 +72,19 @@ $wallpaperWinDir    = Join-Path $DistributionRoot "Windows\Web\Wallpaper\Windows
 $wallpaper4KDir     = Join-Path $DistributionRoot "Windows\Web\4K\Wallpaper\Windows"
 $avatarDir          = Join-Path $DistributionRoot "ProgramData\Microsoft\User Account Pictures"
 
-$stagingDirs = @($wallpaperCustomDir, $wallpaperWinDir, $wallpaper4KDir, $avatarDir)
-foreach ($dir in $stagingDirs) {
+$allDirs = @($wallpaperCustomDir, $wallpaperWinDir, $wallpaper4KDir, $avatarDir)
+foreach ($dir in $allDirs) {
     if (-not (Test-Path $dir)) {
         New-Item -Path $dir -ItemType Directory -Force | Out-Null
     }
 }
 
-# 2. Wallpaper Staging & Multi-Resolution Allocation
-Write-Host "[INFO] Staging primary and fallback wallpaper assets..." -ForegroundColor Cyan
+# 2. Stage Wallpaper Assets & 4K Fallback Suite
+Write-Host "[INFO] Processing and deploying wallpaper distribution suite..." -ForegroundColor Cyan
 Copy-Item -Path $MasterWallpaperPath -Destination (Join-Path $wallpaperCustomDir "Wallpaper1.jpg") -Force
 Copy-Item -Path $MasterWallpaperPath -Destination (Join-Path $wallpaperWinDir "img0.jpg") -Force
 
-# Stage resolution-specific 4K Bloom replacements
+# Stage 4K multi-resolution overrides to defeat Windows default Bloom replacement
 $resolutions = @("1920x1200", "2560x1600", "3840x2160")
 foreach ($res in $resolutions) {
     Copy-Item -Path $MasterWallpaperPath -Destination (Join-Path $wallpaper4KDir "img0_$res.jpg") -Force
@@ -88,8 +98,8 @@ for ($i = 2; $i -le 5; $i++) {
     }
 }
 
-# 3. GDI+ Avatar Downsampling and Format Encoding
-Write-Host "[INFO] Generating multi-DPI user account pictures..." -ForegroundColor Cyan
+# 3. GDI+ Avatar Resampling Pipeline
+Write-Host "[INFO] Generating multi-DPI user account picture tiles..." -ForegroundColor Cyan
 Add-Type -AssemblyName System.Drawing
 
 $avatarSizes = @(32, 40, 48, 192, 448)
@@ -121,16 +131,16 @@ finally {
     $srcImage.Dispose()
 }
 
-# 4. XML DOM Injection into autounattend.xml
+# 4. XML DOM Policy Injection (autounattend.xml)
 if (Test-Path $UnattendPath) {
-    Write-Host "[INFO] Injecting theming and avatar policy nodes into autounattend.xml..." -ForegroundColor Cyan
+    Write-Host "[INFO] Modifying autounattend.xml to register theme and global avatar tile policy..." -ForegroundColor Cyan
     
     [xml]$xmlDoc = Get-Content -Path $UnattendPath -Encoding utf8
     $nsMgr = New-Object System.Xml.XmlNamespaceManager($xmlDoc.NameTable)
     $nsMgr.AddNamespace("u", "urn:schemas-microsoft-com:unattend")
     $nsMgr.AddNamespace("wcm", "http://schemas.microsoft.com/WMIConfig/2002/State")
 
-    # Invalidate old theme node if present
+    # Invalidate existing Themes block if present
     $existingThemes = $xmlDoc.SelectSingleNode("//u:settings[@pass='oobeSystem']/u:component[@name='Microsoft-Windows-Shell-Setup']/u:Themes", $nsMgr)
     if ($null -ne $existingThemes) {
         $existingThemes.ParentNode.RemoveChild($existingThemes) | Out-Null
@@ -152,7 +162,7 @@ if (Test-Path $UnattendPath) {
         [void]$oobeShell.AppendChild($themesNode)
     }
 
-    # Invalidate and re-inject UseDefaultTile registry command in specialize pass
+    # Inject UseDefaultTile registry command into specialize pass
     $specializeDeployment = $xmlDoc.SelectSingleNode("//u:settings[@pass='specialize']/u:component[@name='Microsoft-Windows-Deployment']/u:RunSynchronous", $nsMgr)
     if ($null -eq $specializeDeployment) {
         $specializePass = $xmlDoc.SelectSingleNode("//u:settings[@pass='specialize']", $nsMgr)
@@ -180,7 +190,7 @@ if (Test-Path $UnattendPath) {
         [void]$cmdNode.AppendChild($orderNode)
 
         $descNode = $xmlDoc.CreateElement("Description", "urn:schemas-microsoft-com:unattend")
-        $descNode.InnerText = "Enforce Default User Account Avatar Tile"
+        $descNode.InnerText = "Enforce Global Default User Account Picture"
         [void]$cmdNode.AppendChild($descNode)
 
         $pathNode = $xmlDoc.CreateElement("Path", "urn:schemas-microsoft-com:unattend")
@@ -191,9 +201,9 @@ if (Test-Path $UnattendPath) {
     }
 
     $xmlDoc.Save($UnattendPath)
-    Write-Host "[SUCCESS] autounattend.xml updated with native theme and avatar policies." -ForegroundColor Green
+    Write-Host "[SUCCESS] autounattend.xml updated with theme and avatar enforcement." -ForegroundColor Green
 } else {
-    Write-Host "[WARNING] autounattend.xml not found on $CleanDrive; skipped XML modification." -ForegroundColor Yellow
+    Write-Host "[WARNING] autounattend.xml not detected on root of $CleanDrive. XML modification skipped." -ForegroundColor Yellow
 }
 
-Write-Host "[SUCCESS] OEM Theming distribution build complete on $CleanDrive." -ForegroundColor Green
+Write-Host "[SUCCESS] Aegis OEM Theming deployment package successfully built on $CleanDrive." -ForegroundColor Green
