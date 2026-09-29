@@ -1,93 +1,62 @@
+<p align="center">
+  <img src="https://github.com/narcarsiss/Aegis-Win11/raw/main/assets/AgeisLogo.jpeg" alt="Aegis Win11 Logo" width="500" />
+</p>
+
+---
+
 # Aegis-OEM-Theming
 
-Standalone, post-creation branding and theming injection engine for Windows 11 automated deployments. 
+Standalone, post-creation OEM branding and theming injection utility for Windows 11 automated deployments. 
 
-`Aegis-OEM-Theming` operates as an independent companion package for the `Aegis-Win11` deployment toolkit. It allows administrators to stage custom 4K wallpapers and downsample master user profile avatars directly into an installation USB drive without altering core deployment code or polluting the primary git repository with large binary graphic assets.
-
----
-
-## Architecture Overview
-
-Windows 11 pulls default desktop backgrounds and account avatars from specific physical paths on the local drive:
-
-* **Desktop Wallpapers:** Standard out-of-the-box backgrounds originate from `%SystemRoot%\Web\Wallpaper\Windows\img0.jpg`. On 4K monitors, the Desktop Window Manager checks `%SystemRoot%\Web\4K\Wallpaper\Windows\img0_*.jpg` prior to falling back to 1080p.
-* **User Account Pictures:** Avatars for all local users, the built-in Administrator, and the sign-in screen are retrieved from `%ProgramData%\Microsoft\User Account Pictures\`. Forcing Windows to apply these custom images globally requires setting `UseDefaultTile = 1` under `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer`.
-
-`Install-AegisTheme.ps1` processes master input assets and writes them to the `$OEM$\$1\` distribution share on the installer USB media. Windows Setup automatically copies all files from `sources\$OEM$\$1\` directly to `C:\` during the early offline file-copy phase.
+`Aegis-OEM-Theming` is an independent companion package for the `Aegis-Win11` deployment toolkit. It allows administrators to stage 4K custom wallpapers, fallback theme files, and multi-resolution user profile picture suites directly into a prepared installation USB drive without altering core deployment code or bloating the primary git repository with large image files.
 
 ---
 
-## Directory Staging Topology
-
-When injected onto the installer USB, the following filesystem structure is staged:
+## Directory Layout
 
 ```
-USB_DRIVE:\
-├── autounattend.xml
-└── sources\
-    └── $OEM$\
-        └── $1\
-            ├── ProgramData\
-            │   └── Microsoft\
-            │       └── User Account Pictures\
-            │           ├── guest.bmp        (448x448 24-bit BMP)
-            │           ├── guest.png        (448x448 32-bit RGBA)
-            │           ├── user-32.png      (32x32 32-bit RGBA)
-            │           ├── user-40.png      (40x40 32-bit RGBA)
-            │           ├── user-48.png      (48x48 32-bit RGBA)
-            │           ├── user-192.png     (192x192 32-bit RGBA)
-            │           ├── user.bmp         (448x448 24-bit BMP)
-            │           └── user.png         (448x448 32-bit RGBA)
-            └── Windows\
-                └── Web\
-                    ├── 4K\
-                    │   └── Wallpaper\
-                    │       └── Windows\
-                    │           ├── img0_1920x1200.jpg
-                    │           ├── img0_2560x1600.jpg
-                    │           └── img0_3840x2160.jpg
-                    └── Wallpaper\
-                        ├── Custom\
-                        │   ├── Wallpaper1.jpg (Primary Wallpaper)
-                        │   ├── Wallpaper2.jpg
-                        │   ├── Wallpaper3.jpg
-                        │   ├── Wallpaper4.jpg
-                        │   └── Wallpaper5.jpg
-                        └── Windows\
-                            └── img0.jpg       (Standard Bloom Fallback)
+Aegis-OEM-Theming/
+├── Install-AegisTheme.ps1            # Master injection script
+├── README.md                         # Technical manual
+├── LICENSE                           # MIT License
+└── assets/                           # Default image assets
+    ├── Master_Wallpaper.png          # Default 16:9 master wallpaper
+    └── Master_Avatar.png             # Default 1:1 master avatar
 ```
+
+---
+
+## Technical Functionality
+
+1. **Wallpaper Deployment:** Stages `Wallpaper1.jpg` through `Wallpaper5.jpg` under `%WINDIR%\Web\Wallpaper\Custom\`. Automatically replaces `%WINDIR%\Web\Wallpaper\Windows\img0.jpg` and the high-resolution files under `%WINDIR%\Web\4K\Wallpaper\Windows\img0_*.jpg` to override the default Windows 11 Bloom graphic across all monitor resolutions.
+2. **Global Avatar Enforcement:** Resamples the master avatar into the five official PNG sizes (32x32, 40x40, 48x48, 192x192, 448x448) and legacy BMP formats required by the Windows Shell under `%ProgramData%\Microsoft\User Account Pictures\`.
+3. **Automated XML DOM Configuration:** Automatically checks for `autounattend.xml` on the target USB root, injecting the `<Themes>` block into `oobeSystem` and the `UseDefaultTile = 1` registry command into `specialize`.
 
 ---
 
 ## Usage Instructions
 
-### Prerequisites
-* Windows PowerShell 5.1 or PowerShell 7 running elevated.
-* A bootable Windows 11 USB installer prepared with `Aegis-Win11`.
-* A high-resolution 16:9 master wallpaper (`Master_Wallpaper.png`).
-* A high-resolution 1:1 square master avatar (`Master_Avatar.png`).
+>To permanently change the defaults for your organization, replace `Master_Wallpaper.png` and `Master_Avatar.png` inside the `assets/` folder.
 
-### Execution
-Run the injection script targeting the mounted USB drive:
+### Default Execution (Using Included Assets)
+Insert your prepared `Aegis-Win11` installer USB, open an elevated PowerShell prompt, and run:
 
 ```powershell
-.\scripts\Install-AegisTheme.ps1 `
-    -UsbDrive "E:" `
-    -MasterWallpaperPath ".\assets\raw\Master_Wallpaper.png" `
-    -MasterAvatarPath ".\assets\raw\Master_Avatar.png" `
-    -AllowTheming $true
+.\Install-AegisTheme.ps1 -UsbDrive "E:"
 ```
 
-### Parameter Reference
+### Custom Execution (Using External Assets)
+To inject custom branding without modifying the repository files:
 
-* `-UsbDrive`: Drive letter of the target installation USB volume.
-* `-MasterWallpaperPath`: Full path to the source wallpaper graphic.
-* `-MasterAvatarPath`: Full path to the source avatar graphic.
-* `-AllowTheming`: Boolean switch (default `$true`). Setting to `$false` aborts injection without modifying the target media.
+```powershell
+.\Install-AegisTheme.ps1 `
+    -UsbDrive "E:" `
+    -MasterWallpaperPath "C:\Branding\Company_4K_Wall.png" `
+    -MasterAvatarPath "C:\Branding\Company_Logo_Square.png"
+```
 
 ---
 
 ## License
 
 Released by Moosehead Studio under the MIT License.
-```
