@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/narcarsiss/Aegis-Win11/raw/main/assets/AgeisLogo.jpeg" alt="Aegis Win11 Logo" width="500" />
+  <img src="/assets/aegis-theme-engine-logo.png" alt="Aegis theme engine Logo" width="400" />
 </p>
 
 ---
